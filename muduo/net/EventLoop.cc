@@ -206,6 +206,7 @@ void EventLoop::queueInLoop(Functor cb)
   if (!isInLoopThread() || callingPendingFunctors_)
   {
     wakeup();
+  }
 }
 
 size_t EventLoop::queueSize() const
