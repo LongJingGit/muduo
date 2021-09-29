@@ -61,6 +61,45 @@ EventLoop* EventLoop::getEventLoopOfCurrentThread()
   return t_loopInThisThread;
 }
 
+/**
+ * EventLoop:
+ * 首先需要明确：
+ * 1. EventLoop 控制着 Poller 的生命周期
+ * 2. Poller 负责监听所有 fd（Poller 维护了 channel 和 fd 的映射表）
+ * 3. EventLoop 的 poller 对象在 loop 中被调用。也就是说，其实可以认为 EventLoop 在监听着本线程内所有模块的所有 fd
+ *
+ * 如何实现监听本线程内所有模块的 fd :
+ * 1. EventLoop 实例会传入到本线程内所有需要的模块
+ * 2. 每个模块如果需要监听某个事件，则创建自己的 fd，并创建自己的 channel 实例，然后设置该 fd 的回调函数。（所以 channel 里面会有 fd 和 callback）
+ * 3. 每个模块通过传入的 EventLoop 实例的指针，将自己的 channel 和 fd 注册到(EventLoop的) poller 的映射表中，将 fd 注册到 poller 内核监听队列中
+ * 4. 如果 poller 监听的 fd 更新了状态(包括可读/可写等)，会返回给 EventLoop，由 EventLoop 执行每个 channel 的回调函数
+ */
+
+/**
+ * Poller
+ * 1. poller 的生命中周期由 EventLoop 唯一控制
+ * 2. poller 维护着 <fd, channel*> 的映射表，其他模块创建自己的监听描述符和 channel，由 EventLoop 更新到 poller 的映射表中
+ */
+
+/**
+ * wakeupFd_ 描述符的作用：
+ * wakeupFd_ 同样是需要监听的文件描述符，并且有属于自己的 channel 和回调函数。该 fd 仍然是由 EventLoop 的 poller 的内核监听队列来管理的。
+ *
+ * wakeupFd 在监听什么？—— one loop per thread
+ * 每个线程只有一个 eventloop 实例，如果在另一个线程中调用其他线程的 loop 回调函数，需要将该 loop 转移到 loop 自己的线程中执行。
+ *
+ * 转移操作使用了消息队列来执行。比如 A 线程将回调函数放入到队列，B 线程从队列中获取回调函数并执行。但是 B 线程如何知道何时需要从队列中获取回调函数？
+ * 所以这里维护了一个 fd，当 B 线程将回调函数放入到队列时，会向该 fd 写入特定内容（仅为唤醒 A 线程的 fd）；
+ * A 线程监听到该 fd 上的可读事件，读取 fd 的内容（为了清除该 fd 的可读事件，无其他用途），然后从队列中获取 B 线程写入的回调函数并执行
+ */
+
+/**
+ * Channel:
+ * 每个文件描述符 fd 对应着一个 channel，并且每个 channel 都有自己的回调函数。fd 会被注册到 poll 的内核监听队列中。
+ *
+ * poll 由 EventLoop 中的 Poller 实例进行回调
+ */
+
 EventLoop::EventLoop()
   : looping_(false),
     quit_(false),
@@ -167,7 +206,6 @@ void EventLoop::queueInLoop(Functor cb)
   if (!isInLoopThread() || callingPendingFunctors_)
   {
     wakeup();
-  }
 }
 
 size_t EventLoop::queueSize() const
