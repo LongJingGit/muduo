@@ -67,7 +67,7 @@ Timestamp EPollPoller::poll(int timeoutMs, ChannelList* activeChannels)
     fillActiveChannels(numEvents, activeChannels);
     if (implicit_cast<size_t>(numEvents) == events_.size())
     {
-      events_.resize(events_.size()*2);
+      events_.resize(events_.size()*2);     // 扩容
     }
   }
   else if (numEvents == 0)
@@ -107,7 +107,7 @@ void EPollPoller::fillActiveChannels(int numEvents,
 void EPollPoller::updateChannel(Channel* channel)
 {
   Poller::assertInLoopThread();
-  const int index = channel->index();
+  const int index = channel->index(); // channel->index 在创建 channel 的时候被初始化成 -1
   LOG_TRACE << "fd = " << channel->fd()
     << " events = " << channel->events() << " index = " << index;
   if (index == kNew || index == kDeleted)

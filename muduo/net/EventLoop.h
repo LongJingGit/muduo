@@ -157,6 +157,7 @@ class EventLoop : noncopyable
   Channel* currentActiveChannel_;
 
   mutable MutexLock mutex_;
+  // GUARDED_BY(mutex_)：clang 的线程安全分析模块，pendingFunctors_ 是受 mutex 保护的，如果忘记加锁，编译器会给警告
   std::vector<Functor> pendingFunctors_ GUARDED_BY(mutex_);
 };
 
