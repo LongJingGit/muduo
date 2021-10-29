@@ -50,7 +50,7 @@ class Acceptor : noncopyable
   void handleRead();
 
   EventLoop* loop_;
-  Socket acceptSocket_;
+  Socket acceptSocket_; // 监听 socket
   Channel acceptChannel_;
   NewConnectionCallback newConnectionCallback_;
   bool listening_;

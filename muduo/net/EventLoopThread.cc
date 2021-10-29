@@ -46,6 +46,7 @@ EventLoopThread::~EventLoopThread()
 EventLoop* EventLoopThread::startLoop()
 {
   assert(!thread_.started());
+  // 启动线程，在新的线程中执行 线程的回调函数 EventLoopThread::threadFunc()
   thread_.start();
 
   EventLoop* loop = NULL;

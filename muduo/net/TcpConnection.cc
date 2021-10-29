@@ -20,7 +20,7 @@
 using namespace muduo;
 using namespace muduo::net;
 
-void muduo::net::defaultConnectionCallback(const TcpConnectionPtr& conn)
+void muduo::net::defaultConnectionCallback(const TcpConnectionPtr &conn)
 {
   LOG_TRACE << conn->localAddress().toIpPort() << " -> "
             << conn->peerAddress().toIpPort() << " is "
@@ -28,50 +28,59 @@ void muduo::net::defaultConnectionCallback(const TcpConnectionPtr& conn)
   // do not call conn->forceClose(), because some users want to register message callback only.
 }
 
-void muduo::net::defaultMessageCallback(const TcpConnectionPtr&,
-                                        Buffer* buf,
+void muduo::net::defaultMessageCallback(const TcpConnectionPtr &,
+                                        Buffer *buf,
                                         Timestamp)
 {
   buf->retrieveAll();
 }
 
-TcpConnection::TcpConnection(EventLoop* loop,
-                             const string& nameArg,
+/**
+ * @brief
+ * TcpConnection 是建立真正的连接，入参 sockfd 从监听 socket 的回调函数中获取到的连接 socket
+ * 数据收发都是通过该连接 sockfd 来完成的
+ *
+ * channel_：连接描述符会建立自己的 channel_，然后将要监听事件注册给 poll；如果内核监听到事件，会执行事件回调函数，即可以从连接 socket 上读取和写入数据
+ */
+
+// sockfd: 连接 socket
+TcpConnection::TcpConnection(EventLoop *loop,
+                             const string &nameArg,
                              int sockfd,
-                             const InetAddress& localAddr,
-                             const InetAddress& peerAddr)
-  : loop_(CHECK_NOTNULL(loop)),
-    name_(nameArg),
-    state_(kConnecting),
-    reading_(true),
-    socket_(new Socket(sockfd)),
-    channel_(new Channel(loop, sockfd)),
-    localAddr_(localAddr),
-    peerAddr_(peerAddr),
-    highWaterMark_(64*1024*1024)
+                             const InetAddress &localAddr,
+                             const InetAddress &peerAddr)
+    : loop_(CHECK_NOTNULL(loop)),
+      name_(nameArg),
+      state_(kConnecting),
+      reading_(true),
+      socket_(new Socket(sockfd)), /*利用 连接 sockfd 创建连接 socket*/
+      channel_(new Channel(loop, sockfd)),
+      localAddr_(localAddr),
+      peerAddr_(peerAddr),
+      highWaterMark_(64 * 1024 * 1024)
 {
   channel_->setReadCallback(
-      std::bind(&TcpConnection::handleRead, this, _1));
+      std::bind(&TcpConnection::handleRead, this, _1)); // 设置该 channel 的回调函数，最终会由 EventLoop 调用
   channel_->setWriteCallback(
       std::bind(&TcpConnection::handleWrite, this));
   channel_->setCloseCallback(
       std::bind(&TcpConnection::handleClose, this));
   channel_->setErrorCallback(
       std::bind(&TcpConnection::handleError, this));
-  LOG_DEBUG << "TcpConnection::ctor[" <<  name_ << "] at " << this
+  LOG_DEBUG << "TcpConnection::ctor[" << name_ << "] at " << this
             << " fd=" << sockfd;
-  socket_->setKeepAlive(true);
+  socket_->setKeepAlive(true); // 连接 socket keep alive
 }
 
 TcpConnection::~TcpConnection()
 {
-  LOG_DEBUG << "TcpConnection::dtor[" <<  name_ << "] at " << this
+  LOG_DEBUG << "TcpConnection::dtor[" << name_ << "] at " << this
             << " fd=" << channel_->fd()
             << " state=" << stateToString();
   assert(state_ == kDisconnected);
 }
 
-bool TcpConnection::getTcpInfo(struct tcp_info* tcpi) const
+bool TcpConnection::getTcpInfo(struct tcp_info *tcpi) const
 {
   return socket_->getTcpInfo(tcpi);
 }
@@ -84,12 +93,12 @@ string TcpConnection::getTcpInfoString() const
   return buf;
 }
 
-void TcpConnection::send(const void* data, int len)
+void TcpConnection::send(const void *data, int len)
 {
-  send(StringPiece(static_cast<const char*>(data), len));
+  send(StringPiece(static_cast<const char *>(data), len));
 }
 
-void TcpConnection::send(const StringPiece& message)
+void TcpConnection::send(const StringPiece &message)
 {
   if (state_ == kConnected)
   {
@@ -99,18 +108,18 @@ void TcpConnection::send(const StringPiece& message)
     }
     else
     {
-      void (TcpConnection::*fp)(const StringPiece& message) = &TcpConnection::sendInLoop;
+      void (TcpConnection::*fp)(const StringPiece &message) = &TcpConnection::sendInLoop;
       loop_->runInLoop(
           std::bind(fp,
-                    this,     // FIXME
+                    this, // FIXME
                     message.as_string()));
-                    //std::forward<string>(message)));
+      //std::forward<string>(message)));
     }
   }
 }
 
 // FIXME efficiency!!!
-void TcpConnection::send(Buffer* buf)
+void TcpConnection::send(Buffer *buf)
 {
   if (state_ == kConnected)
   {
@@ -121,22 +130,22 @@ void TcpConnection::send(Buffer* buf)
     }
     else
     {
-      void (TcpConnection::*fp)(const StringPiece& message) = &TcpConnection::sendInLoop;
+      void (TcpConnection::*fp)(const StringPiece &message) = &TcpConnection::sendInLoop;
       loop_->runInLoop(
           std::bind(fp,
-                    this,     // FIXME
+                    this, // FIXME
                     buf->retrieveAllAsString()));
-                    //std::forward<string>(message)));
+      //std::forward<string>(message)));
     }
   }
 }
 
-void TcpConnection::sendInLoop(const StringPiece& message)
+void TcpConnection::sendInLoop(const StringPiece &message)
 {
   sendInLoop(message.data(), message.size());
 }
 
-void TcpConnection::sendInLoop(const void* data, size_t len)
+void TcpConnection::sendInLoop(const void *data, size_t len)
 {
   loop_->assertInLoopThread();
   ssize_t nwrote = 0;
@@ -177,13 +186,11 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
   if (!faultError && remaining > 0)
   {
     size_t oldLen = outputBuffer_.readableBytes();
-    if (oldLen + remaining >= highWaterMark_
-        && oldLen < highWaterMark_
-        && highWaterMarkCallback_)
+    if (oldLen + remaining >= highWaterMark_ && oldLen < highWaterMark_ && highWaterMarkCallback_)
     {
       loop_->queueInLoop(std::bind(highWaterMarkCallback_, shared_from_this(), oldLen + remaining));
     }
-    outputBuffer_.append(static_cast<const char*>(data)+nwrote, remaining);
+    outputBuffer_.append(static_cast<const char *>(data) + nwrote, remaining);
     if (!channel_->isWriting())
     {
       channel_->enableWriting();
@@ -254,7 +261,7 @@ void TcpConnection::forceCloseWithDelay(double seconds)
     loop_->runAfter(
         seconds,
         makeWeakCallback(shared_from_this(),
-                         &TcpConnection::forceClose));  // not forceCloseInLoop to avoid race condition
+                         &TcpConnection::forceClose)); // not forceCloseInLoop to avoid race condition
   }
 }
 
@@ -268,20 +275,20 @@ void TcpConnection::forceCloseInLoop()
   }
 }
 
-const char* TcpConnection::stateToString() const
+const char *TcpConnection::stateToString() const
 {
   switch (state_)
   {
-    case kDisconnected:
-      return "kDisconnected";
-    case kConnecting:
-      return "kConnecting";
-    case kConnected:
-      return "kConnected";
-    case kDisconnecting:
-      return "kDisconnecting";
-    default:
-      return "unknown state";
+  case kDisconnected:
+    return "kDisconnected";
+  case kConnecting:
+    return "kConnecting";
+  case kConnected:
+    return "kConnected";
+  case kDisconnecting:
+    return "kDisconnecting";
+  default:
+    return "unknown state";
   }
 }
 
@@ -320,13 +327,14 @@ void TcpConnection::stopReadInLoop()
   }
 }
 
+// 作为回调函数，在 tcp_server 创建 TcpConnection 对象之后调用该接口
 void TcpConnection::connectEstablished()
 {
   loop_->assertInLoopThread();
   assert(state_ == kConnecting);
   setState(kConnected);
   channel_->tie(shared_from_this());
-  channel_->enableReading();
+  channel_->enableReading(); // 注册 channel_
 
   connectionCallback_(shared_from_this());
 }
@@ -426,4 +434,3 @@ void TcpConnection::handleError()
   LOG_ERROR << "TcpConnection::handleError [" << name_
             << "] - SO_ERROR = " << err << " " << strerror_tl(err);
 }
-

@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <unistd.h>
+#include <iostream>
 
 using namespace muduo;
 using namespace muduo::net;
@@ -20,16 +21,16 @@ int current = 0;
 
 class EchoClient : noncopyable
 {
- public:
-  EchoClient(EventLoop* loop, const InetAddress& listenAddr, const string& id)
-    : loop_(loop),
-      client_(loop, listenAddr, "EchoClient"+id)
+public:
+  EchoClient(EventLoop *loop, const InetAddress &listenAddr, const string &id)
+      : loop_(loop),
+        client_(loop, listenAddr, "EchoClient" + id)
   {
     client_.setConnectionCallback(
         std::bind(&EchoClient::onConnection, this, _1));
     client_.setMessageCallback(
         std::bind(&EchoClient::onMessage, this, _1, _2, _3));
-    //client_.enableRetry();
+    // client_.enableRetry();
   }
 
   void connect()
@@ -38,12 +39,12 @@ class EchoClient : noncopyable
   }
   // void stop();
 
- private:
-  void onConnection(const TcpConnectionPtr& conn)
+private:
+  void onConnection(const TcpConnectionPtr &conn)
   {
     LOG_TRACE << conn->localAddress().toIpPort() << " -> "
-        << conn->peerAddress().toIpPort() << " is "
-        << (conn->connected() ? "UP" : "DOWN");
+              << conn->peerAddress().toIpPort() << " is "
+              << (conn->connected() ? "UP" : "DOWN");
 
     if (conn->connected())
     {
@@ -57,7 +58,7 @@ class EchoClient : noncopyable
     conn->send("world\n");
   }
 
-  void onMessage(const TcpConnectionPtr& conn, Buffer* buf, Timestamp time)
+  void onMessage(const TcpConnectionPtr &conn, Buffer *buf, Timestamp time)
   {
     string msg(buf->retrieveAllAsString());
     LOG_TRACE << conn->name() << " recv " << msg.size() << " bytes at " << time.toString();
@@ -76,11 +77,11 @@ class EchoClient : noncopyable
     }
   }
 
-  EventLoop* loop_;
+  EventLoop *loop_;
   TcpClient client_;
 };
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
   LOG_INFO << "pid = " << getpid() << ", tid = " << CurrentThread::tid();
   if (argc > 1)
@@ -99,7 +100,7 @@ int main(int argc, char* argv[])
     for (int i = 0; i < n; ++i)
     {
       char buf[32];
-      snprintf(buf, sizeof buf, "%d", i+1);
+      snprintf(buf, sizeof buf, "%d", i + 1);
       clients.emplace_back(new EchoClient(&loop, serverAddr, buf));
     }
 
@@ -111,4 +112,3 @@ int main(int argc, char* argv[])
     printf("Usage: %s host_ip [current#]\n", argv[0]);
   }
 }
-

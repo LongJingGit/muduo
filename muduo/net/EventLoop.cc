@@ -95,6 +95,8 @@ EventLoop *EventLoop::getEventLoopOfCurrentThread()
  * 所以这里维护了一个 fd，当 B 线程将回调函数放入到队列时，会向该 fd 写入特定内容（仅为唤醒 A 线程的 fd）；
  * A 线程监听到该 fd 上的可读事件，读取 fd 的内容（为了清除该 fd 的可读事件，无其他用途），然后从队列中获取 B 线程写入的回调函数并执行
  *
+ * 也就是说，wakeupFd_ 仅做信号通知的用途（仅用来传输控制信息，并不传输数据）
+ *
  * pendingFunctors_
  * 两个线程之间使用了 std::vector<callBack> pendingFunctors_ 容器作为回调函数在多个线程之间转移的方式，该容器被多线程共享。
  *
@@ -122,17 +124,17 @@ EventLoop *EventLoop::getEventLoopOfCurrentThread()
  */
 
 EventLoop::EventLoop()
-  : looping_(false),
-    quit_(false),
-    eventHandling_(false),
-    callingPendingFunctors_(false),
-    iteration_(0),
-    threadId_(CurrentThread::tid()),
-    poller_(Poller::newDefaultPoller(this)),
-    timerQueue_(new TimerQueue(this)),
-    wakeupFd_(createEventfd()),
-    wakeupChannel_(new Channel(this, wakeupFd_)),
-    currentActiveChannel_(NULL)
+    : looping_(false),
+      quit_(false),
+      eventHandling_(false),
+      callingPendingFunctors_(false),
+      iteration_(0),
+      threadId_(CurrentThread::tid()),
+      poller_(Poller::newDefaultPoller(this)),
+      timerQueue_(new TimerQueue(this)),
+      wakeupFd_(createEventfd()),
+      wakeupChannel_(new Channel(this, wakeupFd_)),
+      currentActiveChannel_(NULL)
 {
   LOG_DEBUG << "EventLoop created " << this << " in thread " << threadId_;
   if (t_loopInThisThread)
@@ -144,7 +146,11 @@ EventLoop::EventLoop()
   {
     t_loopInThisThread = this;
   }
-  // FIXME: channel 的 readCallback 的回调函数参数是 Timestamp 类型，为什么这里传入的参数是 this 指针，但是 EventLoop::handleRead 的参数为空？
+  /**
+   * @brief
+   * FIXME: channel 的 readCallback 的回调函数参数是 Timestamp 类型，但是执行绑定的回调函数 EventLoop::handleRead 的参数为空，能执行
+   * 这样的绑定吗？
+   */
   wakeupChannel_->setReadCallback(std::bind(&EventLoop::handleRead, this)); // 设置 channel 的回调函数
   // we are always reading the wakeupfd
   wakeupChannel_->enableReading(); // 更新 channel 到 poller 的映射表中，更新 channel->fd 到 poll 的内核监听队列中
@@ -165,7 +171,7 @@ void EventLoop::loop()
   assert(!looping_);
   assertInLoopThread();
   looping_ = true;
-  quit_ = false;  // FIXME: what if someone calls quit() before loop() ?
+  quit_ = false; // FIXME: what if someone calls quit() before loop() ?
   LOG_TRACE << "EventLoop " << this << " start looping";
 
   while (!quit_)
@@ -179,14 +185,14 @@ void EventLoop::loop()
     }
     // TODO sort channel by priority
     eventHandling_ = true;
-    for (Channel* channel : activeChannels_)
+    for (Channel *channel : activeChannels_)
     {
       currentActiveChannel_ = channel;
-      currentActiveChannel_->handleEvent(pollReturnTime_);
+      currentActiveChannel_->handleEvent(pollReturnTime_); // 执行 channel 的回调函数
     }
     currentActiveChannel_ = NULL;
     eventHandling_ = false;
-    doPendingFunctors();    // 执行从其他线程传递到本线程的 loop 中的回调函数
+    doPendingFunctors(); // 执行从其他线程传递到本线程的 loop 中的回调函数
   }
 
   LOG_TRACE << "EventLoop " << this << " stop looping";
@@ -220,8 +226,8 @@ void EventLoop::runInLoop(Functor cb)
 void EventLoop::queueInLoop(Functor cb)
 {
   {
-  MutexLockGuard lock(mutex_);
-  pendingFunctors_.push_back(std::move(cb));
+    MutexLockGuard lock(mutex_);
+    pendingFunctors_.push_back(std::move(cb));
   }
 
   if (!isInLoopThread() || callingPendingFunctors_)
@@ -258,26 +264,26 @@ void EventLoop::cancel(TimerId timerId)
   return timerQueue_->cancel(timerId);
 }
 
-void EventLoop::updateChannel(Channel* channel)
+void EventLoop::updateChannel(Channel *channel)
 {
   assert(channel->ownerLoop() == this);
   assertInLoopThread();
   poller_->updateChannel(channel);
 }
 
-void EventLoop::removeChannel(Channel* channel)
+void EventLoop::removeChannel(Channel *channel)
 {
   assert(channel->ownerLoop() == this);
   assertInLoopThread();
   if (eventHandling_)
   {
     assert(currentActiveChannel_ == channel ||
-        std::find(activeChannels_.begin(), activeChannels_.end(), channel) == activeChannels_.end());
+           std::find(activeChannels_.begin(), activeChannels_.end(), channel) == activeChannels_.end());
   }
   poller_->removeChannel(channel);
 }
 
-bool EventLoop::hasChannel(Channel* channel)
+bool EventLoop::hasChannel(Channel *channel)
 {
   assert(channel->ownerLoop() == this);
   assertInLoopThread();
@@ -288,7 +294,7 @@ void EventLoop::abortNotInLoopThread()
 {
   LOG_FATAL << "EventLoop::abortNotInLoopThread - EventLoop " << this
             << " was created in threadId_ = " << threadId_
-            << ", current thread id = " <<  CurrentThread::tid();
+            << ", current thread id = " << CurrentThread::tid();
 }
 
 void EventLoop::wakeup()
@@ -317,11 +323,11 @@ void EventLoop::doPendingFunctors()
   callingPendingFunctors_ = true;
 
   {
-  MutexLockGuard lock(mutex_);
-  functors.swap(pendingFunctors_);
+    MutexLockGuard lock(mutex_);
+    functors.swap(pendingFunctors_);
   }
 
-  for (const Functor& functor : functors)
+  for (const Functor &functor : functors)
   {
     functor();
   }
@@ -330,9 +336,8 @@ void EventLoop::doPendingFunctors()
 
 void EventLoop::printActiveChannels() const
 {
-  for (const Channel* channel : activeChannels_)
+  for (const Channel *channel : activeChannels_)
   {
     LOG_TRACE << "{" << channel->reventsToString() << "} ";
   }
 }
-

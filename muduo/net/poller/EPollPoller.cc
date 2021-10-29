@@ -117,7 +117,7 @@ void EPollPoller::updateChannel(Channel* channel)
     if (index == kNew)
     {
       assert(channels_.find(fd) == channels_.end());
-      channels_[fd] = channel;
+      channels_[fd] = channel; // 更新 std::map<fd, channel*> 映射表
     }
     else // index == kDeleted
     {
@@ -125,7 +125,7 @@ void EPollPoller::updateChannel(Channel* channel)
       assert(channels_[fd] == channel);
     }
 
-    channel->set_index(kAdded);
+    channel->set_index(kAdded); // 注意：每个 channel 对应着一个 index
     update(EPOLL_CTL_ADD, channel);
   }
   else
@@ -169,6 +169,7 @@ void EPollPoller::removeChannel(Channel* channel)
   channel->set_index(kNew);
 }
 
+// 将 channel 中的 fd 注册到内核监听队列中
 void EPollPoller::update(int operation, Channel* channel)
 {
   struct epoll_event event;

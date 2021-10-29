@@ -22,17 +22,17 @@
 using namespace muduo;
 using namespace muduo::net;
 
-Acceptor::Acceptor(EventLoop* loop, const InetAddress& listenAddr, bool reuseport)
-  : loop_(loop),
-    acceptSocket_(sockets::createNonblockingOrDie(listenAddr.family())),
-    acceptChannel_(loop, acceptSocket_.fd()),
-    listening_(false),
-    idleFd_(::open("/dev/null", O_RDONLY | O_CLOEXEC))
+Acceptor::Acceptor(EventLoop *loop, const InetAddress &listenAddr, bool reuseport)
+    : loop_(loop),
+      acceptSocket_(sockets::createNonblockingOrDie(listenAddr.family())),
+      acceptChannel_(loop, acceptSocket_.fd()),
+      listening_(false),
+      idleFd_(::open("/dev/null", O_RDONLY | O_CLOEXEC))
 {
   assert(idleFd_ >= 0);
   acceptSocket_.setReuseAddr(true);
   acceptSocket_.setReusePort(reuseport);
-  acceptSocket_.bindAddress(listenAddr);
+  acceptSocket_.bindAddress(listenAddr); // 绑定 IP 地址和 Port
   acceptChannel_.setReadCallback(
       std::bind(&Acceptor::handleRead, this));
 }
@@ -48,15 +48,22 @@ void Acceptor::listen()
 {
   loop_->assertInLoopThread();
   listening_ = true;
+  // FIXME: 如果 channel 还没有将 listen fd 注册到 epoll 中，就有连接请求，那么下面这两行代码的顺序就会导致该连接请求被丢掉
+  // 是否可以考虑先注册 channel，然后再开启监听？
   acceptSocket_.listen();
   acceptChannel_.enableReading();
 }
 
+/**
+ * @brief
+ * 监听 socket 注册给内核的事件有返回，即有 client 连接到 server，然后会执行监听 socket 的回调函数：即处理该连接，并从该连接上进行数据读取和写入
+ */
 void Acceptor::handleRead()
 {
   loop_->assertInLoopThread();
   InetAddress peerAddr;
   //FIXME loop until no more
+  // 有连接到来，调用 accept 接收连接，并返回 连接描述符 connfd
   int connfd = acceptSocket_.accept(&peerAddr);
   if (connfd >= 0)
   {
@@ -86,4 +93,3 @@ void Acceptor::handleRead()
     }
   }
 }
-
