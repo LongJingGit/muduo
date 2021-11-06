@@ -138,8 +138,9 @@ void EPollPoller::updateChannel(Channel* channel)
     assert(index == kAdded);
     if (channel->isNoneEvent())
     {
+      // 模块退出时，从 epoll 的内核监听队列中删除文件描述符
       update(EPOLL_CTL_DEL, channel);
-      channel->set_index(kDeleted);
+      channel->set_index(kDeleted);   // 该 channel 的 index 标记为 "被删除"
     }
     else
     {

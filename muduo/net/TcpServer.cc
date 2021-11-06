@@ -77,7 +77,7 @@ void TcpServer::start()
 void TcpServer::newConnection(int sockfd, const InetAddress &peerAddr)
 {
   loop_->assertInLoopThread();
-  // 从线程池中取出一个线程接收新的连接并处理该连接上的请求，主线程依旧监听 socket
+  // 从线程池中分配一个新线程处理该连接上的请求(读/写)。原有主线程依旧监听socket并接收连接。
   EventLoop *ioLoop = threadPool_->getNextLoop();
   char buf[64];
   snprintf(buf, sizeof buf, "-%s#%d", ipPort_.c_str(), nextConnId_);

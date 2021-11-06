@@ -26,7 +26,12 @@ using namespace muduo::net;
 
 namespace
 {
-  __thread EventLoop *t_loopInThisThread = 0; // 线程局部存储
+  /**
+   * @brief __thread gcc 内置的线程局部存储设施
+   * 1. 每个线程有一份独立的实体，各个线程的值不会相互干扰
+   * 2. 可以用来修饰那些带有全局性且值可能会变，但又不值得用全局变量保护的变量
+   */
+  __thread EventLoop *t_loopInThisThread = 0;
 
   const int kPollTimeMs = 10000;
 
@@ -42,6 +47,7 @@ namespace
   }
 
 #pragma GCC diagnostic ignored "-Wold-style-cast"
+  // 对方断开连接而本地继续写数据的话，会产生 SIGPIPE 信号，SIGPIPE 的默认行为是终止进程。所以需要在程序刚开始就忽略该信号
   class IgnoreSigPipe
   {
   public:
@@ -91,7 +97,7 @@ EventLoop *EventLoop::getEventLoopOfCurrentThread()
  * wakeupFd 在监听什么？—— one loop per thread
  * 每个线程只有一个 eventloop 实例，如果在另一个线程中调用其他线程的 loop 回调函数，需要将该 loop 转移到 loop 自己的线程中执行。
  *
- * 转移操作使用了消息队列来执行。比如 A 线程将回调函数放入到队列，B 线程从队列中获取回调函数并执行。但是 B 线程如何知道何时需要从队列中获取回调函数？
+ * 转移操作使用了消息队列(muduo中使用了线程间共享变量 std::vector)来执行。比如 A 线程将回调函数放入到队列，B 线程从队列中获取回调函数并执行。但是 B 线程如何知道何时需要从队列中获取回调函数？
  * 所以这里维护了一个 fd，当 B 线程将回调函数放入到队列时，会向该 fd 写入特定内容（仅为唤醒 A 线程的 fd）；
  * A 线程监听到该 fd 上的可读事件，读取 fd 的内容（为了清除该 fd 的可读事件，无其他用途），然后从队列中获取 B 线程写入的回调函数并执行
  *
@@ -104,6 +110,11 @@ EventLoop *EventLoop::getEventLoopOfCurrentThread()
  * 需要将该回调函数转移到 B 线程的 EventLoop 实例中执行。
  * 具体的操作方式是将该回调函数放入 pendingFunctors_ 中，然后向 wakeupFd_ 写入某个消息，触发 B 线程监听事件；
  * B 线程会先读取 wakeupFd_ 上的消息（但是并不处理）,然后从 pendingFunctors_ 中读取回调函数并执行
+ *
+ * EventLoop::wakeup() 和 EventLoop::handleRead() 分别对 wakeupFd_ 写入数据和读出数据。
+ *
+ * 为什么不直接在 EventLoop::handleRead() 里面直接调用 doPendingFunctors？
+ *
  */
 
 /**
@@ -192,7 +203,7 @@ void EventLoop::loop()
     }
     currentActiveChannel_ = NULL;
     eventHandling_ = false;
-    doPendingFunctors(); // 执行从其他线程传递到本线程的 loop 中的回调函数
+    doPendingFunctors(); // 执行从其他线程传递到本线程的 loop 中的回调函数(channel::handleEvent 已经读取了wakeupFd_)
   }
 
   LOG_TRACE << "EventLoop " << this << " stop looping";
@@ -223,6 +234,13 @@ void EventLoop::runInLoop(Functor cb)
   }
 }
 
+/**
+ * @brief 将 cb 放入队列，并在必要的时候唤醒 IO 线程
+ * "必要" 时的两种情况：
+ * 1. 如果调用 queueInLoop 的线程不是 IO 线程，那么唤醒是必须的
+ * 2. 如果在 IO 线程调用 queueInLoop，而此时正在调用 pendingFunctors_，那么也必须唤醒？
+ *    2.1 doPendingFunctors 调用的 functor 可能会再调用 queueInLoop(cb)，这时 queueInLoop 就必须 wakeup ，否则这些新加的 cb 就不能被及时调用了
+ */
 void EventLoop::queueInLoop(Functor cb)
 {
   {
@@ -307,6 +325,7 @@ void EventLoop::wakeup()
   }
 }
 
+// 为什么不直接在 EventLoop::handleRead() 里面直接调用 doPendingFunctors？？
 void EventLoop::handleRead()
 {
   uint64_t one = 1;
@@ -317,6 +336,12 @@ void EventLoop::handleRead()
   }
 }
 
+/**
+ * @brief
+ * 不会在临界区内依次调用 functor，而是将回调列表 swap 到临时变量中：
+ * 1. 不仅减小了临界区的长度，不会阻塞其他线程调用 queueInLoop
+ * 2. 避免了死锁（Functor 可能会再次调用 queueInLoop）
+ */
 void EventLoop::doPendingFunctors()
 {
   std::vector<Functor> functors;

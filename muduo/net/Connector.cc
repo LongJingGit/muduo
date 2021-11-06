@@ -77,24 +77,25 @@ void Connector::stopInLoop()
 
 void Connector::connect()
 {
-  int sockfd = sockets::createNonblockingOrDie(serverAddr_.family());
-  int ret = sockets::connect(sockfd, serverAddr_.getSockAddr());
+  // socket 是一次性的，一旦出错（比如对方拒绝连接），就无法恢复，只能关闭重来。因此每次连接都需要建立新的 socket（关闭原来的 socket）
+  int sockfd = sockets::createNonblockingOrDie(serverAddr_.family());  // 创建非阻塞的 socket fd
+  int ret = sockets::connect(sockfd, serverAddr_.getSockAddr());       // 由于 socket fd 是非阻塞的，所以 connect 不会一直阻塞
   int savedErrno = (ret == 0) ? 0 : errno;
   switch (savedErrno)
   {
   case 0:
-  case EINPROGRESS:
+  case EINPROGRESS: // 正在连接
   case EINTR:
   case EISCONN:
     connecting(sockfd);
     break;
 
-  case EAGAIN:
+  case EAGAIN: // 表明本机 ephemeral port 暂时用完，要关闭 socket 再延期重试
   case EADDRINUSE:
   case EADDRNOTAVAIL:
-  case ECONNREFUSED:
+  case ECONNREFUSED:    // 连接被拒绝
   case ENETUNREACH:
-    retry(sockfd);
+    retry(sockfd); // 不断重试，直到连接成功
     break;
 
   case EACCES:
@@ -116,6 +117,7 @@ void Connector::connect()
   }
 }
 
+// TcpClient 尝试重新连接的时候会调用到该接口
 void Connector::restart()
 {
   loop_->assertInLoopThread();
@@ -162,6 +164,7 @@ void Connector::handleWrite()
   if (state_ == kConnecting)
   {
     int sockfd = removeAndResetChannel();
+    // 当 socket 可写的时候，还需要再次确认（可能出现服务端关闭的情况，所以这种场景下就需要尝试重新连接）
     int err = sockets::getSocketError(sockfd);
     if (err)
     {
@@ -169,6 +172,7 @@ void Connector::handleWrite()
                << err << " " << strerror_tl(err);
       retry(sockfd);
     }
+    // 处理自连接(判断本端IP/PORT是否和对端IP/PORT相同)：断开连接再重新尝试
     else if (sockets::isSelfConnect(sockfd))
     {
       LOG_WARN << "Connector::handleWrite - Self connect";
@@ -176,6 +180,8 @@ void Connector::handleWrite()
     }
     else
     {
+      // 在这里，才算是完成了连接
+      // 这里的 newConnectionCallback_ 绑定到 TcpClient::newConnection。创建 TcpConnection，注册读写事件，然后进行数据收发
       setState(kConnected);
       if (connect_)
       {
@@ -216,6 +222,7 @@ void Connector::retry(int sockfd)
              << " in " << retryDelayMs_ << " milliseconds. ";
     loop_->runAfter(retryDelayMs_ / 1000.0,
                     std::bind(&Connector::startInLoop, shared_from_this()));
+    // 重试时间逐渐加长，即 back-off
     retryDelayMs_ = std::min(retryDelayMs_ * 2, kMaxRetryDelayMs);
   }
   else

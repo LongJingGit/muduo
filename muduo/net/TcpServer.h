@@ -19,102 +19,118 @@
 
 namespace muduo
 {
-namespace net
-{
-
-class Acceptor;
-class EventLoop;
-class EventLoopThreadPool;
-
-///
-/// TCP server, supports single-threaded and thread-pool models.
-///
-/// This is an interface class, so don't expose too much details.
-class TcpServer : noncopyable
-{
- public:
-  typedef std::function<void(EventLoop*)> ThreadInitCallback;
-  enum Option
+  namespace net
   {
-    kNoReusePort,
-    kReusePort,
-  };
 
-  //TcpServer(EventLoop* loop, const InetAddress& listenAddr);
-  TcpServer(EventLoop* loop,
-            const InetAddress& listenAddr,
-            const string& nameArg,
-            Option option = kNoReusePort);
-  ~TcpServer();  // force out-line dtor, for std::unique_ptr members.
+    class Acceptor;
+    class EventLoop;
+    class EventLoopThreadPool;
 
-  const string& ipPort() const { return ipPort_; }
-  const string& name() const { return name_; }
-  EventLoop* getLoop() const { return loop_; }
+    /**
+     * @brief
+     * TcpServer 内部使用 Acceptor 来获得新连接的 fd。它保存用户提供的 connectionCallback_ 和 messageCallback_，
+     * 在新建 TcpConnection 的时候会原样传递给后者
+     */
 
-  /// Set the number of threads for handling input.
-  ///
-  /// Always accepts new connection in loop's thread.
-  /// Must be called before @c start
-  /// @param numThreads
-  /// - 0 means all I/O in loop's thread, no thread will created.
-  ///   this is the default value.
-  /// - 1 means all I/O in another thread.
-  /// - N means a thread pool with N threads, new connections
-  ///   are assigned on a round-robin basis.
-  void setThreadNum(int numThreads);
-  void setThreadInitCallback(const ThreadInitCallback& cb)
-  { threadInitCallback_ = cb; }
-  /// valid after calling start()
-  std::shared_ptr<EventLoopThreadPool> threadPool()
-  { return threadPool_; }
+    ///
+    /// TCP server, supports single-threaded and thread-pool models.
+    ///
+    /// This is an interface class, so don't expose too much details.
+    class TcpServer : noncopyable
+    {
+    public:
+      typedef std::function<void(EventLoop *)> ThreadInitCallback;
+      enum Option
+      {
+        kNoReusePort,
+        kReusePort,
+      };
 
-  /// Starts the server if it's not listening.
-  ///
-  /// It's harmless to call it multiple times.
-  /// Thread safe.
-  void start();
+      //TcpServer(EventLoop* loop, const InetAddress& listenAddr);
+      TcpServer(EventLoop *loop,
+                const InetAddress &listenAddr,
+                const string &nameArg,
+                Option option = kNoReusePort);
+      ~TcpServer(); // force out-line dtor, for std::unique_ptr members.
 
-  /// Set connection callback.
-  /// Not thread safe.
-  void setConnectionCallback(const ConnectionCallback& cb)
-  { connectionCallback_ = cb; }
+      const string &ipPort() const { return ipPort_; }
+      const string &name() const { return name_; }
+      EventLoop *getLoop() const { return loop_; }
 
-  /// Set message callback.
-  /// Not thread safe.
-  void setMessageCallback(const MessageCallback& cb)
-  { messageCallback_ = cb; }
+      /// Set the number of threads for handling input.
+      ///
+      /// Always accepts new connection in loop's thread.
+      /// Must be called before @c start
+      /// @param numThreads
+      /// - 0 means all I/O in loop's thread, no thread will created.
+      ///   this is the default value.
+      /// - 1 means all I/O in another thread.
+      /// - N means a thread pool with N threads, new connections
+      ///   are assigned on a round-robin basis.
+      void setThreadNum(int numThreads);
+      void setThreadInitCallback(const ThreadInitCallback &cb)
+      {
+        threadInitCallback_ = cb;
+      }
+      /// valid after calling start()
+      std::shared_ptr<EventLoopThreadPool> threadPool()
+      {
+        return threadPool_;
+      }
 
-  /// Set write complete callback.
-  /// Not thread safe.
-  void setWriteCompleteCallback(const WriteCompleteCallback& cb)
-  { writeCompleteCallback_ = cb; }
+      /// Starts the server if it's not listening.
+      ///
+      /// It's harmless to call it multiple times.
+      /// Thread safe.
+      void start();
 
- private:
-  /// Not thread safe, but in loop
-  void newConnection(int sockfd, const InetAddress& peerAddr);
-  /// Thread safe.
-  void removeConnection(const TcpConnectionPtr& conn);
-  /// Not thread safe, but in loop
-  void removeConnectionInLoop(const TcpConnectionPtr& conn);
+      /// Set connection callback.
+      /// Not thread safe.
+      void setConnectionCallback(const ConnectionCallback &cb)
+      {
+        connectionCallback_ = cb;
+      }
 
-  typedef std::map<string, TcpConnectionPtr> ConnectionMap;
+      /// Set message callback.
+      /// Not thread safe.
+      void setMessageCallback(const MessageCallback &cb)
+      {
+        messageCallback_ = cb;
+      }
 
-  EventLoop* loop_;  // the acceptor loop
-  const string ipPort_;
-  const string name_;
-  std::unique_ptr<Acceptor> acceptor_; // avoid revealing Acceptor
-  std::shared_ptr<EventLoopThreadPool> threadPool_;
-  ConnectionCallback connectionCallback_;
-  MessageCallback messageCallback_;
-  WriteCompleteCallback writeCompleteCallback_;
-  ThreadInitCallback threadInitCallback_;
-  AtomicInt32 started_;
-  // always in loop thread
-  int nextConnId_;
-  ConnectionMap connections_;
-};
+      /// Set write complete callback.
+      /// Not thread safe.
+      void setWriteCompleteCallback(const WriteCompleteCallback &cb)
+      {
+        writeCompleteCallback_ = cb;
+      }
 
-}  // namespace net
-}  // namespace muduo
+    private:
+      /// Not thread safe, but in loop
+      void newConnection(int sockfd, const InetAddress &peerAddr);
+      /// Thread safe.
+      void removeConnection(const TcpConnectionPtr &conn);
+      /// Not thread safe, but in loop
+      void removeConnectionInLoop(const TcpConnectionPtr &conn);
 
-#endif  // MUDUO_NET_TCPSERVER_H
+      typedef std::map<string, TcpConnectionPtr> ConnectionMap;
+
+      EventLoop *loop_; // the acceptor loop
+      const string ipPort_;
+      const string name_;
+      std::unique_ptr<Acceptor> acceptor_; // avoid revealing Acceptor
+      std::shared_ptr<EventLoopThreadPool> threadPool_;   // 每个 TcpServer 有自己的 thread pool，多个 tcpserver 之间不共享 thread pool
+      ConnectionCallback connectionCallback_;
+      MessageCallback messageCallback_;
+      WriteCompleteCallback writeCompleteCallback_;
+      ThreadInitCallback threadInitCallback_;
+      AtomicInt32 started_;
+      // always in loop thread
+      int nextConnId_;
+      ConnectionMap connections_;
+    };
+
+  } // namespace net
+} // namespace muduo
+
+#endif // MUDUO_NET_TCPSERVER_H

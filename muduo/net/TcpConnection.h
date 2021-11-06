@@ -142,8 +142,8 @@ class TcpConnection : noncopyable,
   const InetAddress peerAddr_;
   ConnectionCallback connectionCallback_;
   MessageCallback messageCallback_;
-  WriteCompleteCallback writeCompleteCallback_;
-  HighWaterMarkCallback highWaterMarkCallback_;
+  WriteCompleteCallback writeCompleteCallback_;   // 如果发送缓冲区被清空，就调用它
+  HighWaterMarkCallback highWaterMarkCallback_;   // 如果输出缓冲的长度超过用户指定的大小，就会触发回调（只在上升沿触发一次）
   CloseCallback closeCallback_;
   size_t highWaterMark_;
   Buffer inputBuffer_;

@@ -56,7 +56,7 @@ void Acceptor::listen()
 
 /**
  * @brief
- * 监听 socket 注册给内核的事件有返回，即有 client 连接到 server，然后会执行监听 socket 的回调函数：即处理该连接，并从该连接上进行数据读取和写入
+ * listening socket 注册给内核的事件有返回，即有 client 连接到 server，然后会执行监听 socket 的回调函数：即处理该连接，并从该连接上进行数据读取和写入
  */
 void Acceptor::handleRead()
 {
@@ -64,6 +64,8 @@ void Acceptor::handleRead()
   InetAddress peerAddr;
   //FIXME loop until no more
   // 有连接到来，调用 accept 接收连接，并返回 连接描述符 connfd
+
+  // FIXME: 可以提前创建 连接socket 对象，然后用 connfd 实例化该对象，用移动语义将 连接 socket 对象 std::move 给回调函数，确保资源的安全释放
   int connfd = acceptSocket_.accept(&peerAddr);
   if (connfd >= 0)
   {

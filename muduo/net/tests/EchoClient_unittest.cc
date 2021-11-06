@@ -30,7 +30,7 @@ public:
         std::bind(&EchoClient::onConnection, this, _1));
     client_.setMessageCallback(
         std::bind(&EchoClient::onMessage, this, _1, _2, _3));
-    // client_.enableRetry();
+    client_.enableRetry(); // 服务端断开连接后，客户端会不断尝试重新连接
   }
 
   void connect()

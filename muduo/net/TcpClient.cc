@@ -76,11 +76,14 @@ TcpClient::~TcpClient()
            << "] - connector " << get_pointer(connector_);
   TcpConnectionPtr conn;
   bool unique = false;
+  // 减小临界区的操作
   {
     MutexLockGuard lock(mutex_);
-    unique = connection_.unique();
+    unique = connection_.unique();// 判断当前 shared_ptr 对象指向的堆内存是否不再有其他 shared_ptr 对象再指向它
     conn = connection_;
   }
+
+  // FIXME: 为什么下面的 if else 条件不能同时执行呢？
   if (conn)
   {
     assert(loop_ == conn->getLoop());
@@ -90,7 +93,7 @@ TcpClient::~TcpClient()
         std::bind(&TcpConnection::setCloseCallback, conn, cb));
     if (unique)
     {
-      conn->forceClose();
+      conn->forceClose();   // 在 forceClose 中会调用到 CloseCallback 回调函数
     }
   }
   else
@@ -123,6 +126,7 @@ void TcpClient::disconnect()
   }
 }
 
+// 应用程序可以直接调用该接口退出
 void TcpClient::stop()
 {
   connect_ = false;
@@ -171,6 +175,7 @@ void TcpClient::removeConnection(const TcpConnectionPtr& conn)
   }
 
   loop_->queueInLoop(std::bind(&TcpConnection::connectDestroyed, conn));
+  // 服务端强制退出或者因为某些异常情况退出之后，客户端会不断尝试重新连接。但是需要用户使能 retry
   if (retry_ && connect_)
   {
     LOG_INFO << "TcpClient::connect[" << name_ << "] - Reconnecting to "
@@ -178,4 +183,3 @@ void TcpClient::removeConnection(const TcpConnectionPtr& conn)
     connector_->restart();
   }
 }
-

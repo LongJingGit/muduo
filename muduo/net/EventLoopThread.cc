@@ -14,12 +14,14 @@ using namespace muduo;
 using namespace muduo::net;
 
 /**
- * 在单独的线程里创建另一个 EventLoop 实例，并返回给其他的线程
+ * 在任意一个线程创建并运行 EventLoop。
  *
- * 另一个线程启动后调用 EventLoopThread::threadFunc ，会创建新的 EventLoop 实例。
- * 其他线程可以通过调用 EventLoopThread::startLoop 接口获取到另一个线程创建的 EventLoop 实例。
+ * EventLoopThread 会创建新的线程，并在新的线程中调用 EventLoopThread::threadFunc，创建新的 EventLoop 实例，并且执行 EventLoop::loop()
+ *
+ * 其他线程可以通过调用 EventLoopThread::startLoop() 接口获取到 EventLoopThread 创建的 EventLoop 对象的地址。
+ *
+ * 可以按照优先级将不同的 socket 分给不同的 IO 线程，避免优先级反转。
  */
-
 EventLoopThread::EventLoopThread(const ThreadInitCallback& cb,
                                  const string& name)
   : loop_(NULL),
@@ -43,10 +45,11 @@ EventLoopThread::~EventLoopThread()
   }
 }
 
+// 应用程序调用该接口，返回新线程中 EventLoop 对象的地址
 EventLoop* EventLoopThread::startLoop()
 {
   assert(!thread_.started());
-  // 启动线程，在新的线程中执行 线程的回调函数 EventLoopThread::threadFunc()
+  // 启动新线程，在新的线程中执行线程的回调函数 EventLoopThread::threadFunc()
   thread_.start();
 
   EventLoop* loop = NULL;
