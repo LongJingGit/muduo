@@ -73,7 +73,7 @@ void Acceptor::handleRead()
     // LOG_TRACE << "Accepts of " << hostport;
     if (newConnectionCallback_)
     {
-      newConnectionCallback_(connfd, peerAddr);
+      newConnectionCallback_(connfd, peerAddr); // 绑定到 TcpServer::newConnection（在 TcpServer 的构造函数里进行了绑定）
     }
     else
     {

@@ -58,6 +58,10 @@ EventLoop 类还提供了其他的功能：
 * 在定时时间之后执行某个回调函数 `runAfter`
 * 间隔某个时间之后执行回调函数 `runEvery`
 
+Reactor 事件注册机制时序图如下：
+
+![类图](./images/muduo-reactor.png)
+
 ## channel
 
 每个文件描述符 fd 对应着一个 channel，创建文件描述符 fd 之后，会使用该 fd 实例化一个 channel，并设置该 channel 的回调函数。然后将 channel 注册到 Poller 的映射表中，并将 fd 注册到 Poller 的内核监听队列中。当 Poller 监听的文件描述符事件发生之后，会由 EventLoop 调用 channel 的回调函数。
@@ -200,5 +204,4 @@ muduo 尝试使用智能指针来管理所有资源，所以即使发生异常�
 
 
 ### 遗留问题：
-
 
